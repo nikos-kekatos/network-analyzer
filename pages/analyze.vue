@@ -92,6 +92,10 @@
               <div class="option-line"><b>Deterministic:</b> same input always maps to same token.</div>
               <div class="option-line"><b>Per-run:</b> stable only for current computation, changes next run.</div>
               <div class="option-line"><b>Per-pilot:</b> stable within each pilot value, different across pilots.</div>
+              <div class="option-line mt-2"><b>HMAC-SHA256:</b> keyed deterministic pseudonymization (recommended).</div>
+              <div class="option-line"><b>SHA256 + salt:</b> deterministic salted hashing.</div>
+              <div class="option-line"><b>Random tokenization:</b> non-semantic random tokens per scope.</div>
+              <div class="option-line"><b>Format-preserving IP:</b> keeps IPv4 shape while pseudonymizing value.</div>
               <div class="option-line mt-2">
                 <b>Generalization</b> makes values less specific (IP masks, numeric bins, text prefixes, protocol families) to increase anonymity.
               </div>
@@ -128,6 +132,16 @@
                 item-text="text"
                 item-value="value"
                 label="Pseudonymization Mode"
+                outlined
+                dense
+                class="mb-2"
+              />
+              <v-select
+                v-model="privacyPseudonymizationTechnique"
+                :items="pseudonymizationTechniqueOptions"
+                item-text="text"
+                item-value="value"
+                label="Pseudonymization Technique"
                 outlined
                 dense
               />
@@ -311,6 +325,7 @@ export default {
       privacySensitiveAttribute: null,
       privacyPseudonymize: [],
       privacyPseudonymizationMode: "deterministic",
+      privacyPseudonymizationTechnique: "hmac_sha256",
       privacyGeneralize: [],
       privacySuppress: [],
       privacyGeneralizeProfiles: {},
@@ -335,6 +350,12 @@ export default {
         { text: "Deterministic", value: "deterministic" },
         { text: "Per-run", value: "per_run" },
         { text: "Per-pilot", value: "per_pilot" },
+      ],
+      pseudonymizationTechniqueOptions: [
+        { text: "HMAC-SHA256 (keyed hash)", value: "hmac_sha256" },
+        { text: "SHA256 + salt", value: "sha256_salt" },
+        { text: "Random tokenization", value: "random_token" },
+        { text: "Format-preserving IP", value: "format_preserving_ip" },
       ],
 
       // Table
@@ -525,6 +546,7 @@ export default {
         const transformed = await this.callPrivacyMetrics({
           pseudonymize: this.privacyPseudonymize,
           pseudonymization_mode: this.privacyPseudonymizationMode,
+          pseudonymization_technique: this.privacyPseudonymizationTechnique,
           generalize: this.privacyGeneralize,
           suppress: this.privacySuppress,
           generalize_profiles: this.privacyGeneralizeProfiles,

@@ -1,4 +1,5 @@
 import hashlib
+import hmac
 import ipaddress
 import secrets
 from collections import Counter, defaultdict
@@ -121,12 +122,37 @@ def _pseudonymize_value(value: Any, salt: str) -> Any:
     return f"ps_{digest[:12]}"
 
 
+def _hmac_pseudonymize_value(value: Any, key: str) -> str:
+    msg = _to_str(value).encode("utf-8")
+    digest = hmac.new(key.encode("utf-8"), msg, hashlib.sha256).hexdigest()
+    return f"ps_{digest[:12]}"
+
+
+def _format_preserving_ip_pseudonym(value: Any, key: str) -> Any:
+    if _is_empty(value):
+        return value
+    sval = _to_str(value)
+    if not _is_ip(sval):
+        return _hmac_pseudonymize_value(value, key)
+
+    addr = ipaddress.ip_address(sval)
+    if addr.version != 4:
+        return _hmac_pseudonymize_value(value, key)
+
+    octets = [int(x) for x in sval.split(".")]
+    digest = hmac.new(key.encode("utf-8"), sval.encode("utf-8"), hashlib.sha256).digest()
+    # Preserve the first octet bucket while pseudonymizing host/network details.
+    new_ip = [octets[0], digest[0], digest[1], digest[2]]
+    return ".".join(str(x) for x in new_ip)
+
+
 def apply_transformations(
     records: List[Dict[str, Any]],
     pseudonymize: List[str],
     generalize: List[str],
     suppress: List[str],
     pseudonymization_mode: str = "deterministic",
+    pseudonymization_technique: str = "hmac_sha256",
     generalize_profiles: Optional[Dict[str, str]] = None,
     suppress_thresholds: Optional[Dict[str, int]] = None,
     salt: str = "network-analyzer",
@@ -153,7 +179,18 @@ def apply_transformations(
                     key = (col, _to_str(new_row[col]))
                     row_salt = salt
                 if key not in pseudo_map:
-                    pseudo_map[key] = _pseudonymize_value(new_row[col], row_salt)
+                    if pseudonymization_technique == "sha256_salt":
+                        pseudo_map[key] = _pseudonymize_value(new_row[col], row_salt)
+                    elif pseudonymization_technique == "random_token":
+                        pseudo_map[key] = f"ps_{secrets.token_hex(6)}"
+                    elif pseudonymization_technique == "format_preserving_ip":
+                        pseudo_map[key] = _format_preserving_ip_pseudonym(
+                            new_row[col], row_salt
+                        )
+                    else:
+                        pseudo_map[key] = _hmac_pseudonymize_value(
+                            new_row[col], row_salt
+                        )
                 new_row[col] = pseudo_map[key]
 
         for col in generalize:

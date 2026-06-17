@@ -102,3 +102,7 @@ server/source
 server/make.bat
 server/Makefile
 uploads
+
+# Research artifacts (large binaries / separate repo, not part of the app)
+paper/
+penm-csr-artifact/

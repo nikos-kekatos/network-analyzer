@@ -794,6 +794,9 @@ def privacy_metrics_endpoint():
     generalize = transforms.get("generalize", []) or []
     suppress = transforms.get("suppress", []) or []
     pseudonymization_mode = transforms.get("pseudonymization_mode", "deterministic")
+    pseudonymization_technique = transforms.get(
+        "pseudonymization_technique", "hmac_sha256"
+    )
     generalize_profiles = transforms.get("generalize_profiles", {}) or {}
     suppress_thresholds = transforms.get("suppress_thresholds", {}) or {}
 
@@ -811,6 +814,13 @@ def privacy_metrics_endpoint():
 
     if pseudonymization_mode not in ["deterministic", "per_run", "per_pilot"]:
         return jsonify({"error": "Invalid pseudonymization_mode"}), 400
+    if pseudonymization_technique not in [
+        "hmac_sha256",
+        "sha256_salt",
+        "random_token",
+        "format_preserving_ip",
+    ]:
+        return jsonify({"error": "Invalid pseudonymization_technique"}), 400
 
     transformed = apply_transformations(
         records,
@@ -818,6 +828,7 @@ def privacy_metrics_endpoint():
         generalize,
         suppress,
         pseudonymization_mode=pseudonymization_mode,
+        pseudonymization_technique=pseudonymization_technique,
         generalize_profiles=generalize_profiles,
         suppress_thresholds=normalized_thresholds,
     )
@@ -832,6 +843,7 @@ def privacy_metrics_endpoint():
                 "applied_transformations": {
                     "pseudonymize": pseudonymize,
                     "pseudonymization_mode": pseudonymization_mode,
+                    "pseudonymization_technique": pseudonymization_technique,
                     "generalize": generalize,
                     "suppress": suppress,
                     "generalize_profiles": generalize_profiles,
