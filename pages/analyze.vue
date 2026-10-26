@@ -204,6 +204,14 @@
                 outlined
                 dense
               />
+              <v-text-field
+                v-model.number="privacyRecordSuppressionK"
+                type="number"
+                min="0"
+                label="Record suppression: drop rows in classes smaller than k (0 = off)"
+                outlined
+                dense
+              />
             </v-expansion-panel-content>
           </v-expansion-panel>
         </v-expansion-panels>
@@ -236,36 +244,26 @@
           </ul>
         </v-alert>
 
-        <v-row v-if="privacyOriginalMetrics && privacyTransformedMetrics">
-          <v-col cols="12" md="6">
-            <v-card outlined class="pa-3">
-              <h4 class="mb-2">Before Transformations</h4>
-              <div class="metric-line">
-                k-anonymity: {{ privacyOriginalMetrics.k_anonymity }}
-              </div>
-              <div class="metric-line">
-                l-diversity: {{ privacyOriginalMetrics.l_diversity }}
-              </div>
-              <div class="metric-line">
-                t-closeness: {{ privacyOriginalMetrics.t_closeness }}
-              </div>
-            </v-card>
-          </v-col>
-          <v-col cols="12" md="6">
-            <v-card outlined class="pa-3">
-              <h4 class="mb-2">After Transformations</h4>
-              <div class="metric-line">
-                k-anonymity: {{ privacyTransformedMetrics.k_anonymity }}
-              </div>
-              <div class="metric-line">
-                l-diversity: {{ privacyTransformedMetrics.l_diversity }}
-              </div>
-              <div class="metric-line">
-                t-closeness: {{ privacyTransformedMetrics.t_closeness }}
-              </div>
-            </v-card>
-          </v-col>
-        </v-row>
+        <v-simple-table
+          v-if="privacyOriginalMetrics && privacyTransformedMetrics"
+          dense
+          class="mb-4"
+        >
+          <thead>
+            <tr>
+              <th>Metric</th>
+              <th>Before</th>
+              <th>After</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in privacyMetricRows" :key="row.key">
+              <td class="metric-line">{{ row.label }}</td>
+              <td>{{ privacyOriginalMetrics[row.key] }}</td>
+              <td>{{ privacyTransformedMetrics[row.key] }}</td>
+            </tr>
+          </tbody>
+        </v-simple-table>
 
         <div v-if="privacyTransformedRecords.length" class="mt-4">
           <h4 class="mb-2">Transformed Records Preview</h4>
@@ -330,6 +328,24 @@ export default {
       privacySuppress: [],
       privacyGeneralizeProfiles: {},
       privacySuppressThreshold: 2,
+      privacyRecordSuppressionK: 0,
+      privacyMetricRows: [
+        { key: "records", label: "Rows" },
+        { key: "equivalence_classes", label: "Equivalence classes" },
+        { key: "k_anonymity", label: "k-anonymity (min class)" },
+        { key: "k_record_weighted", label: "k (record-weighted mean)" },
+        { key: "l_diversity", label: "l-diversity (distinct)" },
+        { key: "entropy_l_diversity", label: "l-diversity (entropy)" },
+        { key: "t_closeness", label: "t-closeness (TVD)" },
+        { key: "uniqueness_pct", label: "Unique rows (%)" },
+        { key: "max_reid_risk_pct", label: "Max re-identification risk (%)" },
+        { key: "avg_reid_risk_pct", label: "Avg re-identification risk (%)" },
+        { key: "ppi", label: "PPI" },
+        { key: "ppi_rw", label: "PPI' (record-weighted)" },
+        { key: "rows_retained_pct", label: "Rows kept (%)" },
+        { key: "suppressed_cells_pct", label: "Identifier cells suppressed (%)" },
+        { key: "qi_value_retention_pct", label: "Identifier values kept (%)" },
+      ],
       privacyLoading: false,
       privacyError: "",
       privacySuggestions: [],
@@ -342,6 +358,10 @@ export default {
         { text: "IP Mask /16", value: "ip_mask_16" },
         { text: "Numeric bins (size 5)", value: "numeric_bins_5" },
         { text: "Numeric bins (size 10)", value: "numeric_bins_10" },
+        { text: "Numeric bins (size 30)", value: "numeric_bins_30" },
+        { text: "Order of magnitude", value: "numeric_magnitude" },
+        { text: "MAC vendor prefix (OUI)", value: "mac_oui" },
+        { text: "Port class (system/registered/dynamic)", value: "port_class" },
         { text: "Text prefix (1 char)", value: "text_prefix_1" },
         { text: "Text prefix (3 chars)", value: "text_prefix_3" },
         { text: "Protocol family", value: "protocol_family" },
@@ -378,6 +398,10 @@ export default {
       );
     },
     privacyRecords() {
+      // Per-host records built by the backend from the PCAP (privacy_records.py).
+      if (this.response?.privacy_records?.length) {
+        return this.response.privacy_records;
+      }
       const ipRoles = this.response?.ip_roles || {};
       const ipProtocols = this.analysis?.ip_protocols || {};
       const allIps = new Set([
@@ -551,6 +575,7 @@ export default {
           suppress: this.privacySuppress,
           generalize_profiles: this.privacyGeneralizeProfiles,
           suppress_thresholds: this.suppressThresholdMap,
+          record_suppression_k: Number(this.privacyRecordSuppressionK) || 0,
         });
 
         this.privacyOriginalMetrics = baseline.metrics;

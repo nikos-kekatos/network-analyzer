@@ -51,8 +51,10 @@ from connectToWebsocket import convert_tuple_keys_to_str, startWebSocketClient
 from privacy_metrics import (
     apply_transformations,
     compute_privacy_metrics,
+    compute_utility_metrics,
     build_privacy_suggestions,
 )
+from privacy_records import records_from_pcap
 
 
 app = Flask(__name__)
@@ -770,6 +772,9 @@ def privacy_metrics_endpoint():
                 suppress:
                   type: array
                   items: {type: string}
+                record_suppression_k:
+                  type: integer
+                  description: Drop rows whose QI class has fewer than k rows
     responses:
       200:
         description: Metrics computed
@@ -799,6 +804,10 @@ def privacy_metrics_endpoint():
     )
     generalize_profiles = transforms.get("generalize_profiles", {}) or {}
     suppress_thresholds = transforms.get("suppress_thresholds", {}) or {}
+    try:
+        record_suppression_k = int(transforms.get("record_suppression_k", 0) or 0)
+    except (TypeError, ValueError):
+        return jsonify({"error": "record_suppression_k must be an integer"}), 400
 
     if not isinstance(generalize_profiles, dict):
         return jsonify({"error": "generalize_profiles must be an object"}), 400
@@ -831,8 +840,11 @@ def privacy_metrics_endpoint():
         pseudonymization_technique=pseudonymization_technique,
         generalize_profiles=generalize_profiles,
         suppress_thresholds=normalized_thresholds,
+        record_suppression_k=record_suppression_k,
+        record_suppression_qi=identifiers,
     )
     metrics = compute_privacy_metrics(transformed, identifiers, sensitive_attribute)
+    metrics.update(compute_utility_metrics(records, transformed, identifiers))
     suggestions = build_privacy_suggestions(metrics, identifiers, sensitive_attribute)
 
     return (
@@ -848,12 +860,48 @@ def privacy_metrics_endpoint():
                     "suppress": suppress,
                     "generalize_profiles": generalize_profiles,
                     "suppress_thresholds": normalized_thresholds,
+                    "record_suppression_k": record_suppression_k,
                 },
                 "suggestions": suggestions,
             }
         ),
         200,
     )
+
+
+@app.route("/privacy-records/<path:filename>", methods=["GET"])
+def privacy_records_endpoint(filename: str):
+    """
+    Per-host privacy records for a PCAP already uploaded for analysis
+    ---
+    tags:
+      - Privacy
+    parameters:
+      - name: filename
+        in: path
+        type: string
+        required: true
+      - name: pilot
+        in: query
+        type: string
+        required: false
+    responses:
+      200:
+        description: One record per host (ip, mac, mac_vendor, subnet, scope,
+          role, service_port, protocols, protocol_count, packets, bytes,
+          tx_share, peer_count, first_seen_s, duration_s, pilot)
+      404:
+        description: PCAP not found
+    """
+    pcap_path = Path(PCAP_GEN_OUTPUT_DIR) / os.path.basename(filename)
+    if not pcap_path.exists():
+        return jsonify({"error": "PCAP not found"}), 404
+    pilot = request.args.get("pilot", "PUC#1")
+    try:
+        records = records_from_pcap(str(pcap_path), pilot=pilot)
+    except RuntimeError as e:
+        return jsonify({"error": str(e)}), 500
+    return jsonify({"filename": pcap_path.name, "records": records}), 200
 
 
 @app.route("/automated-analysis", methods=["POST"])
@@ -1007,6 +1055,12 @@ def automated_analysis():
                 f"Role pipeline failed: {report.get('message', 'Unknown')}"
             )
 
+        try:
+            privacy_records = records_from_pcap(str(pcap_path))
+        except Exception as e:
+            print(f"Privacy records failed: {e}")
+            privacy_records = []
+
         response = {
             "filename": unique_name,
             "json": "http://127.0.0.1:5000/save_roles?file=" + name_only + "&type=json",
@@ -1017,6 +1071,7 @@ def automated_analysis():
                 # "graph": graph_json
             },
             "ip_roles": report.get("ip_roles", {}),
+            "privacy_records": privacy_records,
             # "ue_sessions": ue_sessions,
             # "clustering": clustering_result,
             # "suggested_clusters": {
